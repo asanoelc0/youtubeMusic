@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, render_template, request, send_from_directory
 from googleapiclient.errors import HttpError
 
 from auth import get_youtube_service
@@ -9,6 +9,12 @@ app = Flask(__name__)
 @app.route("/")
 def index():
     return render_template("index.html")
+
+
+@app.route("/sw.js")
+def service_worker():
+    # ルート直下(scope=/)で配信することで、アプリ全体をService Workerの管理下に置く
+    return send_from_directory(app.static_folder, "sw.js", mimetype="application/javascript")
 
 
 @app.route("/api/playlists")
