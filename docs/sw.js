@@ -1,9 +1,12 @@
-const CACHE_NAME = "ytm-reorder-v1";
+const CACHE_NAME = "ytm-reorder-v2";
 const APP_SHELL = [
-  "/",
-  "/static/manifest.json",
-  "/static/icons/icon-192.png",
-  "/static/icons/icon-512.png",
+  "./",
+  "./index.html",
+  "./app.js",
+  "./firebase-config.js",
+  "./manifest.json",
+  "./icons/icon-192.png",
+  "./icons/icon-512.png",
 ];
 
 self.addEventListener("install", (event) => {
@@ -27,12 +30,8 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
 
-  // プレイリストや曲順は常に最新のものが必要なのでAPI呼び出しはキャッシュしない
-  if (url.pathname.startsWith("/api/")) {
-    return;
-  }
-
-  if (event.request.method !== "GET") {
+  // 他オリジンへのリクエスト(YouTube API・Firebase・CDN等)はキャッシュ対象外にし、素通りさせる
+  if (url.origin !== self.location.origin || event.request.method !== "GET") {
     return;
   }
 

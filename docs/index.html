@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<title>プレイリスト並び替え</title>
+
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#e11d48">
+
+<!-- iOSのホーム画面追加用 -->
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="並び替え">
+
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
+
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f4f4f7;
+    --card-bg: #ffffff;
+    --text: #1a1a1a;
+    --muted: #6b6b76;
+    --accent: #e11d48;
+    --border: #e2e2e8;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #121214;
+      --card-bg: #1c1c1f;
+      --text: #f2f2f4;
+      --muted: #9a9aa2;
+      --border: #2c2c30;
+    }
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding-bottom: calc(84px + env(safe-area-inset-bottom));
+  }
+  header {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    background: var(--bg);
+    padding: calc(12px + env(safe-area-inset-top)) 16px 12px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  h1 {
+    font-size: 18px;
+    margin: 0 0 10px;
+  }
+  select {
+    width: 100%;
+    padding: 12px;
+    font-size: 16px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--card-bg);
+    color: var(--text);
+  }
+
+  /* ログイン画面 */
+  #loginView {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    padding: 80px 24px;
+    text-align: center;
+  }
+  #loginView p { color: var(--muted); font-size: 14px; margin: 0; }
+  #loginBtn {
+    padding: 14px 28px;
+    font-size: 16px;
+    font-weight: 600;
+    border: none;
+    border-radius: 10px;
+    background: var(--accent);
+    color: #fff;
+  }
+  #loginError { color: #e5484d; font-size: 13px; min-height: 18px; }
+  #logoutBtn {
+    background: transparent;
+    color: var(--muted);
+    border: 1px solid var(--border);
+    padding: 8px 12px;
+    font-size: 13px;
+    border-radius: 8px;
+    flex: none;
+  }
+  #userLabel { font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  #status {
+    padding: 10px 16px;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  #list {
+    padding: 8px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 8px 10px;
+  }
+  .handle {
+    font-size: 22px;
+    color: var(--muted);
+    padding: 4px 8px;
+    touch-action: none;
+    user-select: none;
+    cursor: grab;
+  }
+  .thumb {
+    width: 44px;
+    height: 44px;
+    border-radius: 6px;
+    object-fit: cover;
+    flex-shrink: 0;
+    background: var(--border);
+  }
+  .meta { min-width: 0; flex: 1; }
+  .title {
+    font-size: 14px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .channel {
+    font-size: 12px;
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .sortable-ghost { opacity: 0.35; }
+  .sortable-chosen { background: color-mix(in srgb, var(--accent) 8%, var(--card-bg)); }
+  footer {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+    background: var(--bg);
+    border-top: 1px solid var(--border);
+    display: flex;
+    gap: 10px;
+  }
+  button { font-family: inherit; }
+  #saveBtn {
+    flex: 1;
+    padding: 14px;
+    font-size: 16px;
+    font-weight: 600;
+    border: none;
+    border-radius: 10px;
+    background: var(--accent);
+    color: #fff;
+  }
+  #saveBtn:disabled { opacity: 0.5; }
+  .empty {
+    text-align: center;
+    color: var(--muted);
+    padding: 40px 16px;
+    font-size: 14px;
+  }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+
+<div id="loginView">
+  <h1>プレイリスト並び替え</h1>
+  <p>Googleアカウントでログインすると、あなたのYouTube Musicプレイリストを並び替えられます。</p>
+  <button id="loginBtn">Googleでログイン</button>
+  <div id="loginError"></div>
+</div>
+
+<div id="appView" hidden>
+  <header>
+    <div style="flex:1; min-width:0;">
+      <h1>プレイリスト並び替え</h1>
+      <select id="playlistSelect">
+        <option value="">プレイリストを選択...</option>
+      </select>
+    </div>
+    <div style="text-align:right;">
+      <div id="userLabel"></div>
+      <button id="logoutBtn">ログアウト</button>
+    </div>
+  </header>
+
+  <div id="status"></div>
+  <div id="list"></div>
+
+  <footer>
+    <button id="saveBtn" disabled>この並び順を保存</button>
+  </footer>
+</div>
+
+<script src="firebase-config.js"></script>
+<script src="app.js"></script>
+
+</body>
+</html>

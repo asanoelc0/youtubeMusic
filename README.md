@@ -1,7 +1,6 @@
 # YouTube Music プレイリスト並び替えツール
 
-YouTube Music アプリのドラッグ&ドロップによる曲順変更が使いづらいため、
-**Excel やテキストエディタでプレイリストの曲順を編集し、そのままYouTube Musicに反映する**ためのツールです。
+YouTube Music アプリのドラッグ&ドロップによる曲順変更が使いづらいため、自分で並び替えられるようにするためのツールです。
 
 YouTube Music で作成したプレイリストは YouTube 本体のプレイリストと同じデータなので、
 公式の **YouTube Data API v3** を使って安全に読み書きします（非公式APIやCookie認証は使いません）。
@@ -14,18 +13,29 @@ YouTube Music で作成したプレイリストは YouTube 本体のプレイリ
 2. Excel やテキストエディタで**行を並び替えて保存する**
 3. 保存したファイルを読み込み、その行の順番どおりに YouTube Music 側の曲順を更新する（`import_playlist.py`）
 
-### B. スマホのブラウザで並び替える方法（Webアプリ）
+### B. スマホでいつでも並び替える方法（Webアプリ、サーバー不要）
 
-ローカルで動く小さなWebアプリ（`app.py`）を起動し、同じWi-Fiに繋がったスマホのブラウザから
-アクセスして、曲を指(タッチ)でドラッグ&ドロップして並び替え、保存ボタンでそのままYouTube Musicに反映できます。
+`docs/` 以下は**サーバーを必要としない静的なWebアプリ**です。GitHub Pagesで公開し、Firebase Authentication
+経由でGoogleにログインすると、ブラウザのJavaScriptから直接YouTube Data API v3を呼び出します。
+
+- 常時稼働させるサーバー（PCやクラウド）が不要
+- GitHub Pagesは自動でHTTPS配信されるため、外出先のスマホからでもURLを開くだけでアクセス可能
+- PWA対応のため、ホーム画面に追加してアプリのように起動できる
+- 曲を指(タッチ)でドラッグ&ドロップして並び替え、保存ボタンでそのままYouTube Musicに反映
 
 ## 制約
 
 - 自分で作成した通常のプレイリストのみ対応します。「お気に入りの曲」や自動生成される Supermix などの
   YouTube Music 固有の自動プレイリストは YouTube Data API v3 の対象外のため扱えません。
 - 曲順の更新には1曲あたり50ユニットのAPIクォータを消費します（デフォルト上限: 1日10,000ユニット ≒ 約200件の更新まで無料）。
+- Webアプリ版はブラウザで取得したGoogleのアクセストークンをその場で使う方式のため、トークンは
+  **1時間程度で失効**します。失効したら「ログアウト」→「Googleでログイン」で再取得してください
+  （FirebaseのログインセッションはYouTube API用のアクセストークンを保持しないため、ページを開き直す
+  たびに毎回ログインし直す必要があります）。
 
-## セットアップ
+---
+
+## A. PC上でExcel/テキストエディタを使う方法
 
 ### 1. Google Cloud で認証情報を取得する
 
@@ -46,9 +56,7 @@ source venv/bin/activate  # Windowsは venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-## 使い方
-
-### 1. プレイリストIDを確認する
+### 3. プレイリストIDを確認する
 
 ```bash
 python list_playlists.py
@@ -57,7 +65,7 @@ python list_playlists.py
 自分のプレイリスト一覧とIDが表示されます。初回実行時はブラウザが開き、Googleアカウントでの認証を求められます
 （認証情報は `token.json` に保存され、次回以降は自動的に使われます）。
 
-### 2. プレイリストを書き出す
+### 4. プレイリストを書き出す
 
 ```bash
 python export_playlist.py <playlist_id> playlist.xlsx
@@ -75,13 +83,13 @@ CSVで出力したい場合は拡張子を `.csv` にしてください。
 | videoId | 動画ID |
 | playlistItemId | プレイリスト内アイテムのID(削除・変更しないこと) |
 
-### 3. 並び替える
+### 5. 並び替える
 
 Excel やテキストエディタで**行そのものを並び替えて**保存してください。
 `order` 列の数値を書き換える必要はありません。ファイル内の行の並び順がそのまま新しい曲順になります。
 `videoId` と `playlistItemId` の列は消さないでください。
 
-### 4. YouTube Musicに反映する
+### 6. YouTube Musicに反映する
 
 まず `--dry-run` で変更内容を確認するのがおすすめです。
 
@@ -95,50 +103,55 @@ python import_playlist.py <playlist_id> playlist.xlsx --dry-run
 python import_playlist.py <playlist_id> playlist.xlsx
 ```
 
-## スマホのブラウザから並び替える（Webアプリ）
+---
 
-PC（サーバーとして動かす端末）で以下を実行します。
+## B. スマホでいつでも並び替える方法（Webアプリ、サーバー不要）
 
-```bash
-python app.py
-```
+### 1. Firebaseプロジェクトを作成する
 
-1. **初回のみ**、起動した**そのPC自身のブラウザ**で `http://localhost:5000` を開いてください。
-   Googleの認証画面が表示されるので、ログインして許可します（`token.json` に保存され、以降は不要）。
-2. PCのLAN内IPアドレスを確認します。
-   - Windows: `ipconfig` の「IPv4アドレス」
-   - Mac/Linux: `ifconfig` または `ip addr` の `192.168.x.x` / `10.x.x.x` のようなアドレス
-3. スマホを**同じWi-Fi**に接続し、ブラウザで `http://<PCのIPアドレス>:5000` を開きます（例: `http://192.168.1.10:5000`）。
-4. 上部のプルダウンでプレイリストを選択すると曲一覧が表示されます。
-   各行の **☰** を指で押しながらドラッグして並び替え、下部の「この並び順を保存」を押すとYouTube Musicに反映されます。
+1. [Firebaseコンソール](https://console.firebase.google.com/) で「プロジェクトを追加」から新規作成
+   （裏側では対応するGoogle Cloudプロジェクトが自動作成されます）
+2. 左メニュー「Authentication」→「Sign-in method」→ **Google** を有効化
+3. 左メニュー「プロジェクトの設定」(⚙️アイコン) →「全般」タブの一番下「マイアプリ」→
+   「ウェブアプリを追加」(`</>`アイコン) → アプリ名は何でもよい
+4. 表示される `firebaseConfig` の値(`apiKey`, `authDomain`, `projectId` など)をコピーし、
+   このリポジトリの `docs/firebase-config.js` の該当箇所に貼り付ける
+   （これらの値は公開されることを前提としたものなので、コミットして問題ありません）
 
-### 注意
+### 2. Google Cloud側の設定（YouTube APIを使えるようにする）
 
-- このWebアプリは認証機能を持たないため、**同じネットワーク上の人なら誰でもアクセスできてしまいます**。
-  自宅などの信頼できるネットワークでのみ起動してください。使い終わったら `Ctrl+C` でサーバーを停止することをおすすめします。
-- 外出先からアクセスしたい場合（インターネット経由での公開）は追加のセキュリティ対策が必要なため、
-  このツールの対象外としています。
+Firebaseプロジェクトと同じ名前のGoogle Cloudプロジェクトに対して設定します。
 
-## PWA（ホーム画面にアプリとして追加する）
+1. [Google Cloud Console](https://console.cloud.google.com/) で該当プロジェクトを選択
+2. 「APIとサービス」→「ライブラリ」から **YouTube Data API v3** を有効化
+3. 「APIとサービス」→「OAuth同意画面」
+   - User Type: 外部（個人利用なら「テスト」ステータスのままでOK。テストユーザーに自分のGoogleアカウントを追加）
+   - スコープに `.../auth/youtube` を追加
 
-このWebアプリはPWA（Progressive Web App）化されているため、スマホでアイコンをホーム画面に追加して、
-ネイティブアプリのように起動できます。
+### 3. GitHub Pagesを有効化する
 
-1. スマホのブラウザで `http://<PCのIPアドレス>:5000` を開く
-2. **iPhone(Safari)**: 共有ボタン → 「ホーム画面に追加」
-   **Android(Chrome)**: メニュー(⋮) → 「アプリをインストール」または「ホーム画面に追加」
-3. 追加されたアイコンから起動すると、ブラウザのアドレスバーなどが無いアプリのような画面で開きます
+1. このリポジトリの Settings → Pages を開く
+2. 「Build and deployment」の Source を **Deploy from a branch** にする
+3. Branch を `main`（マージ後）または現在の作業ブランチ、フォルダを **`/docs`** に設定して保存
+4. 数分後、`https://<GitHubユーザー名>.github.io/<リポジトリ名>/` でアクセスできるようになります
 
-### 制約: HTTPSが必要な機能について
+### 4. 承認済みドメインを登録する
 
-PWAの一部機能（Service Workerによるオフラインキャッシュ、Android Chromeの自動インストールバナー）は、
-ブラウザの仕様上 **HTTPS（またはlocalhost）でしか動作しません**。今回のようにLAN内のIPアドレス
-（`http://192.168.x.x:5000` など）に対しては、これらの機能は有効になりません。
+1. Firebaseコンソール →「Authentication」→「Settings」タブ →「承認済みドメイン」
+2. 上記で発行された `<GitHubユーザー名>.github.io` を追加
 
-- **iPhone(Safari)**: HTTPでも「ホーム画面に追加」でアイコン・アプリ名・全画面表示は機能します
-- **Android(Chrome)**: HTTPだと自動インストールバナーやオフラインキャッシュは動作しません。手動の
-  「ホーム画面に追加」でアイコン付きショートカットとしては使えます
+### 5. 使う
 
-もしAndroidでも完全なPWA機能（オフラインキャッシュや自動インストール）を使いたい場合は、このアプリに
-HTTPS（自己署名証明書、または Tailscale / Caddy などでのHTTPS化）を追加する必要があります。必要であれば
-お知らせください。
+1. スマホ・PC問わず、上記のGitHub PagesのURLをブラウザで開く
+2. 「Googleでログイン」をタップし、自分のGoogleアカウントでログイン・許可
+3. プルダウンでプレイリストを選択すると曲一覧が表示される
+4. 各行の **☰** をドラッグして並び替え、下部の「この並び順を保存」でYouTube Musicに反映
+
+### PWAとして使う
+
+HTTPSで配信されるため、PWA機能がフルに使えます。
+
+- **iPhone(Safari)**: 共有ボタン →「ホーム画面に追加」
+- **Android(Chrome)**: メニュー(⋮) →「アプリをインストール」または「ホーム画面に追加」
+
+追加したアイコンから起動すると、ブラウザのアドレスバーなどが無いアプリのような画面で開きます。
