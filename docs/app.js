@@ -1,4 +1,4 @@
-const APP_VERSION = "1.1.0";
+const APP_VERSION = "1.2.0";
 
 const STORAGE_KEYS = {
   token: "ytm_access_token",
@@ -364,10 +364,13 @@ if (stored) {
   showLoggedOut();
 }
 
-if (window.isSecureContext && "serviceWorker" in navigator) {
-  window.addEventListener("load", () => {
-    navigator.serviceWorker.register("sw.js").catch((err) => {
-      console.warn("Service Worker登録に失敗しました:", err);
-    });
+// Service Workerのキャッシュがブラウザ側の更新チェックと絡んで新しいバージョンが
+// 反映されない問題が頻発したため撤去し、登録済みのものが残っていれば解除しておく
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.getRegistrations().then((regs) => {
+    regs.forEach((reg) => reg.unregister());
   });
+}
+if (window.caches) {
+  caches.keys().then((keys) => keys.forEach((key) => caches.delete(key)));
 }
