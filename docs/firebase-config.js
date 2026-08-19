@@ -10,3 +10,9 @@ const firebaseConfig = {
   messagingSenderId: "1019106450954",
   appId: "1:1019106450954:web:4632ba8cf0b6f8ac7bc9f3",
 };
+
+// YouTube APIのアクセストークン取得用(Google Identity Services)。
+// Google Cloud Console → APIとサービス → 認証情報 に、Firebaseが自動作成した
+// 「ウェブクライアント」の値(...apps.googleusercontent.com)を貼り付けてください。
+// https://console.cloud.google.com/apis/credentials?project=conaole-9f8a0
+const GOOGLE_CLIENT_ID = "YOUR_CLIENT_ID.apps.googleusercontent.com";

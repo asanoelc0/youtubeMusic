@@ -144,12 +144,33 @@ Firebaseプロジェクトを作成すると、裏側で**同じIDのGoogle Clou
 5. 「テストユーザー」のステップで、YouTube Musicを操作したい**自分のGoogleアカウント**を追加する
    （ここに登録したアカウント以外はログインしてもYouTube APIの許可画面でエラーになります）
 
-#### 補足: なぜFirebase側だけでは不十分なのか
+#### 2-3. Web用クライアントIDを`firebase-config.js`に設定する
 
-Firebase AuthenticationのGoogleログインは「本人確認」だけを行いますが、今回のアプリはログイン時に
-YouTube操作用のスコープ(`.../auth/youtube`)も同時に要求します。このスコープの許可・審査ルールは
-Google Cloud側のOAuth同意画面で管理されているため、Firebase側の設定(Sign-in method)とは別に、
-上記のGoogle Cloud側の設定も両方必要になります。
+このアプリはログインを2段階に分けています。
+
+1. **Firebase Authentication**: 「本人確認」だけを行う（モバイルブラウザでも安定して動作）
+2. **Google Identity Services**: YouTube操作用のアクセストークン取得だけを担当する
+   （Googleが同じ用途向けに提供している、ブラウザのJavaScriptから直接使えるライブラリ）
+
+Firebaseで「Google」のSign-in methodを有効にすると、裏側のGoogle Cloudプロジェクトに
+「ウェブクライアント」というOAuthクライアントIDが自動的に作られています。これをGoogle Identity
+Services側でも使います。
+
+1. 以下のリンクを開く
+   https://console.cloud.google.com/apis/credentials?project=conaole-9f8a0
+2. 「OAuth 2.0 クライアント ID」の一覧から、種類が **ウェブアプリケーション** のもの
+   （通常「Web client (auto created by Google Service)」という名前）をクリック
+3. 「承認済みの JavaScript 生成元」に、GitHub PagesのURL（例: `https://asanoelc0.github.io`。
+   末尾の `/youtubeMusic/` は不要、ドメイン部分だけ）を追加して保存
+4. ページ上部に表示されている**クライアントID**(`〜.apps.googleusercontent.com`の文字列)をコピーし、
+   `docs/firebase-config.js` の `GOOGLE_CLIENT_ID` に貼り付ける
+
+#### なぜ2段階に分けているのか
+
+FirebaseのGoogleログインでYouTube用のスコープも一緒に要求し、その場でアクセストークンを取り出す方法も
+試しましたが、モバイルブラウザ（Safari系のストレージ制限）でアクセストークンの受け渡しに失敗するケースが
+多く確認されました。ログイン(本人確認)はFirebaseに任せつつ、アクセストークンの取得だけはGoogleが同じ目的
+のために提供しているGoogle Identity Servicesに任せることで、より安定して動作します。
 
 ### 3. GitHub Pagesを有効化する
 
@@ -166,9 +187,11 @@ Google Cloud側のOAuth同意画面で管理されているため、Firebase側�
 ### 5. 使う
 
 1. スマホ・PC問わず、上記のGitHub PagesのURLをブラウザで開く
-2. 「Googleでログイン」をタップし、自分のGoogleアカウントでログイン・許可
-3. プルダウンでプレイリストを選択すると曲一覧が表示される
-4. 各行の **☰** をドラッグして並び替え、下部の「この並び順を保存」でYouTube Musicに反映
+2. 「Googleでログイン」をタップし、自分のGoogleアカウントでログイン（本人確認のみ）
+3. 続けて「YouTubeへのアクセスを許可」をタップし、YouTubeの権限を許可する
+   （ここでポップアップが開きます。ブラウザにポップアップブロックの通知が出た場合は許可してください）
+4. プルダウンでプレイリストを選択すると曲一覧が表示される
+5. 各行の **☰** をドラッグして並び替え、下部の「この並び順を保存」でYouTube Musicに反映
 
 ### PWAとして使う
 

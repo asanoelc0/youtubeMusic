@@ -1,20 +1,24 @@
 firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
 
-const REDIRECT_PENDING_KEY = "ytm_login_redirect_pending";
-
 let accessToken = null;
+let tokenClient = null;
 
 const loginView = document.getElementById("loginView");
+const grantView = document.getElementById("grantView");
 const appView = document.getElementById("appView");
 const loginBtn = document.getElementById("loginBtn");
+const grantBtn = document.getElementById("grantBtn");
+const grantLogoutBtn = document.getElementById("grantLogoutBtn");
 const logoutBtn = document.getElementById("logoutBtn");
 const userLabel = document.getElementById("userLabel");
+const grantUserLabel = document.getElementById("grantUserLabel");
 const playlistSelect = document.getElementById("playlistSelect");
 const listEl = document.getElementById("list");
 const statusEl = document.getElementById("status");
 const saveBtn = document.getElementById("saveBtn");
 const loginError = document.getElementById("loginError");
+const grantError = document.getElementById("grantError");
 
 let sortable = null;
 let originalOrder = [];
@@ -23,17 +27,52 @@ function setStatus(text) {
   statusEl.textContent = text;
 }
 
-function showLoggedOut(message) {
-  accessToken = null;
-  appView.hidden = true;
-  loginView.hidden = false;
-  loginError.textContent = message || "";
-}
+// 3つの画面: 未ログイン(loginView) / ログイン済みだがYouTube許可待ち(grantView) / 利用可能(appView)
+function renderAuthState() {
+  const user = auth.currentUser;
 
-function showLoggedIn(user) {
+  if (!user) {
+    accessToken = null;
+    loginView.hidden = false;
+    grantView.hidden = true;
+    appView.hidden = true;
+    return;
+  }
+
+  if (!accessToken) {
+    loginView.hidden = true;
+    grantView.hidden = false;
+    appView.hidden = true;
+    grantUserLabel.textContent = user.displayName || user.email || "";
+    return;
+  }
+
   loginView.hidden = true;
+  grantView.hidden = true;
   appView.hidden = false;
   userLabel.textContent = user.displayName || user.email || "";
+}
+
+function ensureTokenClient() {
+  if (tokenClient || typeof google === "undefined") return tokenClient;
+  tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: GOOGLE_CLIENT_ID,
+    scope: "https://www.googleapis.com/auth/youtube",
+    callback: (tokenResponse) => {
+      if (tokenResponse.error) {
+        grantError.textContent = `アクセス許可に失敗しました: ${tokenResponse.error}`;
+        return;
+      }
+      grantError.textContent = "";
+      accessToken = tokenResponse.access_token;
+      renderAuthState();
+      loadPlaylists();
+    },
+    error_callback: (err) => {
+      grantError.textContent = `アクセス許可に失敗しました: ${err.type || err.message || err}`;
+    },
+  });
+  return tokenClient;
 }
 
 async function ytFetch(url, options = {}) {
@@ -46,7 +85,8 @@ async function ytFetch(url, options = {}) {
   });
 
   if (res.status === 401) {
-    showLoggedOut("認証の有効期限が切れました。もう一度ログインしてください。");
+    accessToken = null;
+    renderAuthState();
     throw new Error("access token expired");
   }
   if (!res.ok) {
@@ -224,69 +264,40 @@ saveBtn.addEventListener("click", async () => {
   }
 });
 
-function buildGoogleProvider() {
-  const provider = new firebase.auth.GoogleAuthProvider();
-  provider.addScope("https://www.googleapis.com/auth/youtube");
-  provider.setCustomParameters({ prompt: "consent" });
-  return provider;
-}
-
+// ステップ1: Firebaseでログイン(本人確認のみ、YouTubeのスコープは要求しない)
 loginBtn.addEventListener("click", async () => {
   loginError.textContent = "";
   try {
-    // リダイレクトを跨いだ状態保持を確実にするため永続化方式を明示しておく
-    await auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
-    sessionStorage.setItem(REDIRECT_PENDING_KEY, "1");
-    // ポップアップ方式はモバイルブラウザ(ストレージ分離等)でアクセストークンの受け渡しに
-    // 失敗することがあるため、より安定するリダイレクト方式でログインする
-    await auth.signInWithRedirect(buildGoogleProvider());
+    await auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
+    // onAuthStateChangedがrenderAuthState()を呼び、grantViewに遷移する
   } catch (err) {
-    sessionStorage.removeItem(REDIRECT_PENDING_KEY);
     loginError.textContent = `ログインに失敗しました: ${err.message}`;
   }
 });
 
-logoutBtn.addEventListener("click", () => {
-  auth.signOut().finally(() => showLoggedOut());
+// ステップ2: Google Identity Servicesで、YouTube操作用のアクセストークンを取得する
+// (ボタンクリックというユーザー操作の中で直接呼び出す必要がある)
+grantBtn.addEventListener("click", () => {
+  grantError.textContent = "";
+  const client = ensureTokenClient();
+  if (!client) {
+    grantError.textContent = "読み込みに失敗しました。ページを再読み込みしてください。";
+    return;
+  }
+  client.requestAccessToken();
 });
 
-async function handleRedirectResult() {
-  const wasPending = sessionStorage.getItem(REDIRECT_PENDING_KEY) === "1";
-  sessionStorage.removeItem(REDIRECT_PENDING_KEY);
+grantLogoutBtn.addEventListener("click", () => {
+  auth.signOut();
+});
 
-  try {
-    const result = await auth.getRedirectResult();
-    if (result && result.user) {
-      const credential = firebase.auth.GoogleAuthProvider.credentialFromResult(result);
-      if (credential && credential.accessToken) {
-        accessToken = credential.accessToken;
-        showLoggedIn(result.user);
-        loadPlaylists();
-        return;
-      }
-      showLoggedOut("アクセストークンを取得できませんでした。もう一度ログインしてください。");
-      return;
-    }
-  } catch (err) {
-    showLoggedOut(`ログインに失敗しました: ${err.message}`);
-    return;
-  }
+logoutBtn.addEventListener("click", () => {
+  auth.signOut();
+});
 
-  if (wasPending) {
-    // ログインボタンを押した直後のはずなのに結果が取得できなかった場合
-    showLoggedOut(
-      "ログイン結果を検出できませんでした。ブラウザのプライベートモードや「サイト間トラッキングを防ぐ」" +
-      "設定が原因の可能性があります。通常モードのSafari/Chromeでもう一度お試しください。"
-    );
-    return;
-  }
-
-  // FirebaseのログインセッションはOAuthアクセストークン(YouTube API用)を保持しないため、
-  // リダイレクト直後でなければ毎回「Googleでログイン」でトークンを取得し直す
-  showLoggedOut();
-}
-
-handleRedirectResult();
+auth.onAuthStateChanged(() => {
+  renderAuthState();
+});
 
 if (window.isSecureContext && "serviceWorker" in navigator) {
   window.addEventListener("load", () => {
