@@ -15,4 +15,4 @@ const firebaseConfig = {
 // Google Cloud Console → APIとサービス → 認証情報 に、Firebaseが自動作成した
 // 「ウェブクライアント」の値(...apps.googleusercontent.com)を貼り付けてください。
 // https://console.cloud.google.com/apis/credentials?project=conaole-9f8a0
-const GOOGLE_CLIENT_ID = "YOUR_CLIENT_ID.apps.googleusercontent.com";
+const GOOGLE_CLIENT_ID = "1019106450954-la09qfpri8sklmtl8upahejolrlgtcug.apps.googleusercontent.com";
