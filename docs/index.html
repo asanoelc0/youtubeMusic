@@ -100,7 +100,15 @@
     border-radius: 8px;
     flex: none;
   }
-  #userLabel { font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #userLabel {
+    font-size: 12px;
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 55vw;
+  }
+  #userLabel::before { content: "ログイン中: "; }
 
   #status {
     padding: 10px 16px;

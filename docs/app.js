@@ -45,8 +45,8 @@ function ensureTokenClient() {
       accessToken = tokenResponse.access_token;
       showLoggedIn();
       userLabel.textContent = "読み込み中...";
-      fetchUserInfo().then((name) => {
-        userLabel.textContent = name || "";
+      fetchUserInfo().then((label) => {
+        userLabel.textContent = label;
       });
       loadPlaylists();
     },
@@ -64,7 +64,9 @@ async function fetchUserInfo() {
     });
     if (!res.ok) return "";
     const data = await res.json();
-    return data.name || data.email || "";
+    // アカウント違いに気づけるよう、名前だけでなくメールアドレスも表示する
+    if (data.name && data.email) return `${data.name} (${data.email})`;
+    return data.email || data.name || "";
   } catch {
     return "";
   }
