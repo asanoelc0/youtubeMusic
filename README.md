@@ -5,6 +5,23 @@ YouTube Music アプリのドラッグ&ドロップによる曲順変更が使�
 YouTube Music で作成したプレイリストは YouTube 本体のプレイリストと同じデータなので、
 公式の **YouTube Data API v3** を使って安全に読み書きします（非公式APIやCookie認証は使いません）。
 
+## 設定値の早見表(このリポジトリで設定済みのもの)
+
+| 項目 | 値 |
+|---|---|
+| Google Cloudプロジェクト | `conaole-9f8a0` |
+| GitHub Pages公開URL | https://asanoelc0.github.io/youtubeMusic/ |
+| OAuthクライアントID(`docs/config.js`の`GOOGLE_CLIENT_ID`) | `1019106450954-la09qfpri8sklmtl8upahejolrlgtcug.apps.googleusercontent.com` |
+| 承認済みJavaScript生成元 | `https://asanoelc0.github.io` |
+| OAuth同意画面の公開ステータス | テスト中(Testing) |
+
+よく使う設定画面へのリンク:
+
+- YouTube Data API v3 有効化状況: https://console.cloud.google.com/apis/library/youtube.googleapis.com?project=conaole-9f8a0
+- OAuth同意画面(テストユーザーの追加・確認): https://console.cloud.google.com/apis/credentials/consent?project=conaole-9f8a0
+- OAuthクライアントID(承認済みJavaScript生成元の確認・変更): https://console.cloud.google.com/apis/credentials?project=conaole-9f8a0
+- GitHub Pages設定: https://github.com/asanoelc0/youtubeMusic/settings/pages
+
 ## できること
 
 ### A. PC上でExcel/テキストエディタを使う方法
@@ -150,6 +167,18 @@ python import_playlist.py <playlist_id> playlist.xlsx
    通知が出た場合は許可してください）
 3. プルダウンでプレイリストを選択すると曲一覧が表示される
 4. 各行の **☰** をドラッグして並び替え、下部の「この並び順を保存」でYouTube Musicに反映
+
+### 別のGoogleアカウントを追加したい場合
+
+OAuthクライアントIDやGitHub Pagesなど、ここまでの設定は**プロジェクト全体で1回だけ**でよく、
+アカウントを追加するたびにやり直す必要はありません。必要なのは以下の1ステップだけです。
+
+1. https://console.cloud.google.com/apis/credentials/consent?project=conaole-9f8a0 を開く
+2. 「テストユーザー」の項目で「+ ADD USERS」をクリックし、追加したいGoogleアカウントのメールアドレスを入力して保存
+
+現在は公開ステータスが「テスト中」のため、ここに登録したGoogleアカウント（最大100件）だけがログインできます。
+登録していないアカウントでログインしようとすると、以前見た「Googleの審査プロセスを完了していません」という
+エラーになります。
 
 ### PWAとして使う
 
