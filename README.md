@@ -120,13 +120,36 @@ python import_playlist.py <playlist_id> playlist.xlsx
 
 ### 2. Google Cloud側の設定（YouTube APIを使えるようにする）
 
-Firebaseプロジェクトと同じ名前のGoogle Cloudプロジェクトに対して設定します。
+Firebaseプロジェクトを作成すると、裏側で**同じIDのGoogle Cloudプロジェクトが自動的に作られています**
+（今回は `conaole-9f8a0`）。Firebase Authenticationでログイン自体はできても、そのままではYouTube Data API v3
+を呼び出す権限が無いため、こちらのGoogle Cloud側でもう2つ設定が必要です。
 
-1. [Google Cloud Console](https://console.cloud.google.com/) で該当プロジェクトを選択
-2. 「APIとサービス」→「ライブラリ」から **YouTube Data API v3** を有効化
-3. 「APIとサービス」→「OAuth同意画面」
-   - User Type: 外部（個人利用なら「テスト」ステータスのままでOK。テストユーザーに自分のGoogleアカウントを追加）
-   - スコープに `.../auth/youtube` を追加
+#### 2-1. YouTube Data API v3 を有効化する
+
+1. 以下のリンクを開く（`conaole-9f8a0`プロジェクトがあらかじめ選択された状態で開きます）
+   https://console.cloud.google.com/apis/library/youtube.googleapis.com?project=conaole-9f8a0
+2. 「有効にする」ボタンをクリック
+
+#### 2-2. OAuth同意画面を設定する
+
+1. 以下のリンクを開く
+   https://console.cloud.google.com/apis/credentials/consent?project=conaole-9f8a0
+2. まだ作成していなければ「User Type: 外部」を選び作成する（個人利用なら公開審査は不要で、
+   「テスト」ステータスのままで問題ありません）
+3. アプリ名・サポートメール・デベロッパー連絡先などの基本情報を入力
+4. 「スコープ」のステップで **「スコープを追加または削除」** をクリックし、検索欄に `youtube` と入力、
+   もしくは手動で `https://www.googleapis.com/auth/youtube` を貼り付けてチェックを入れ、更新する
+   - このスコープは「制限付きスコープ」として警告が出ますが、テストモードで自分のアカウントのみが
+     使う分には問題ありません（一般公開する場合のみGoogleの審査が必要になります）
+5. 「テストユーザー」のステップで、YouTube Musicを操作したい**自分のGoogleアカウント**を追加する
+   （ここに登録したアカウント以外はログインしてもYouTube APIの許可画面でエラーになります）
+
+#### 補足: なぜFirebase側だけでは不十分なのか
+
+Firebase AuthenticationのGoogleログインは「本人確認」だけを行いますが、今回のアプリはログイン時に
+YouTube操作用のスコープ(`.../auth/youtube`)も同時に要求します。このスコープの許可・審査ルールは
+Google Cloud側のOAuth同意画面で管理されているため、Firebase側の設定(Sign-in method)とは別に、
+上記のGoogle Cloud側の設定も両方必要になります。
 
 ### 3. GitHub Pagesを有効化する
 
