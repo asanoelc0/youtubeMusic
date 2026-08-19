@@ -193,12 +193,19 @@
     font-size: 14px;
   }
   [hidden] { display: none !important; }
+  .app-version {
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--muted);
+    margin-left: 6px;
+    vertical-align: middle;
+  }
 </style>
 </head>
 <body>
 
 <div id="loginView">
-  <h1>プレイリスト並び替え</h1>
+  <h1>プレイリスト並び替え<span class="app-version"></span></h1>
   <p>Googleアカウントでログインすると、あなたのYouTube Musicプレイリストを並び替えられます。</p>
   <button id="loginBtn">Googleでログイン</button>
   <div id="loginError"></div>
@@ -207,7 +214,7 @@
 <div id="appView" hidden>
   <header>
     <div style="flex:1; min-width:0;">
-      <h1>プレイリスト並び替え</h1>
+      <h1>プレイリスト並び替え<span class="app-version"></span></h1>
       <select id="playlistSelect">
         <option value="">プレイリストを選択...</option>
       </select>

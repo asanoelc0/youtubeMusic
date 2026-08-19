@@ -1,3 +1,11 @@
+const APP_VERSION = "1.0.0";
+
+const STORAGE_KEYS = {
+  token: "ytm_access_token",
+  expiry: "ytm_token_expiry",
+  userLabel: "ytm_user_label",
+};
+
 let accessToken = null;
 let tokenClient = null;
 
@@ -15,12 +23,45 @@ const loginError = document.getElementById("loginError");
 let sortable = null;
 let originalOrder = [];
 
+document.title = `プレイリスト並び替え v${APP_VERSION}`;
+document.querySelectorAll(".app-version").forEach((el) => {
+  el.textContent = `v${APP_VERSION}`;
+});
+
 function setStatus(text) {
   statusEl.textContent = text;
 }
 
+function saveSession(token, expiresInSeconds, label) {
+  const expiry = Date.now() + expiresInSeconds * 1000;
+  localStorage.setItem(STORAGE_KEYS.token, token);
+  localStorage.setItem(STORAGE_KEYS.expiry, String(expiry));
+  if (label) localStorage.setItem(STORAGE_KEYS.userLabel, label);
+}
+
+function clearSession() {
+  localStorage.removeItem(STORAGE_KEYS.token);
+  localStorage.removeItem(STORAGE_KEYS.expiry);
+  localStorage.removeItem(STORAGE_KEYS.userLabel);
+}
+
+// トークンには有効期限があり(通常1時間)、それを超えたら結局再ログインが必要になる。
+// ここではページの再読み込みやタブの閉じ直しをまたいで「有効期限内ならログインし直さずに済む」
+// 状態を保持するだけで、無期限にログイン状態を維持することはできない(サーバーを持たない
+// クライアントサイドのみの構成では、Googleの仕様上リフレッシュトークンを安全に扱えないため)。
+function loadStoredSession() {
+  const token = localStorage.getItem(STORAGE_KEYS.token);
+  const expiry = Number(localStorage.getItem(STORAGE_KEYS.expiry) || 0);
+  if (!token || !expiry || Date.now() > expiry - 60000) {
+    clearSession();
+    return null;
+  }
+  return { token, label: localStorage.getItem(STORAGE_KEYS.userLabel) || "" };
+}
+
 function showLoggedOut(message) {
   accessToken = null;
+  clearSession();
   appView.hidden = true;
   loginView.hidden = false;
   loginError.textContent = message || "";
@@ -45,9 +86,9 @@ function ensureTokenClient() {
       accessToken = tokenResponse.access_token;
       showLoggedIn();
       userLabel.textContent = "読み込み中...";
-      fetchUserInfo().then((label) => {
-        userLabel.textContent = label;
-      });
+      const label = await fetchUserInfo();
+      userLabel.textContent = label;
+      saveSession(accessToken, tokenResponse.expires_in || 3600, label);
       loadPlaylists();
     },
     error_callback: (err) => {
@@ -62,13 +103,19 @@ async function fetchUserInfo() {
     const res = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
-    if (!res.ok) return "";
+    if (!res.ok) {
+      console.warn("userinfo取得に失敗", res.status, await res.text());
+      return `アカウント情報を取得できませんでした(エラー${res.status})`;
+    }
     const data = await res.json();
     // アカウント違いに気づけるよう、名前だけでなくメールアドレスも表示する
     if (data.name && data.email) return `${data.name} (${data.email})`;
-    return data.email || data.name || "";
-  } catch {
-    return "";
+    if (data.email) return data.email;
+    if (data.name) return data.name;
+    return "アカウント情報を取得できませんでした";
+  } catch (err) {
+    console.warn("userinfo取得エラー", err);
+    return "アカウント情報を取得できませんでした";
   }
 }
 
@@ -280,7 +327,16 @@ logoutBtn.addEventListener("click", () => {
   showLoggedOut();
 });
 
-showLoggedOut();
+// 有効期限内のトークンが保存されていれば、再ログインなしでそのまま復元する
+const stored = loadStoredSession();
+if (stored) {
+  accessToken = stored.token;
+  showLoggedIn();
+  userLabel.textContent = stored.label || "";
+  loadPlaylists();
+} else {
+  showLoggedOut();
+}
 
 if (window.isSecureContext && "serviceWorker" in navigator) {
   window.addEventListener("load", () => {
