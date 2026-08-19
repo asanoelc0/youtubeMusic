@@ -1,4 +1,4 @@
-const APP_VERSION = "1.0.0";
+const APP_VERSION = "1.1.0";
 
 const STORAGE_KEYS = {
   token: "ytm_access_token",
@@ -153,6 +153,13 @@ async function fetchAllPages(baseUrl, mapItem) {
   return results;
 }
 
+async function fetchMyChannel() {
+  const url = "https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true";
+  const data = await ytFetch(url);
+  const item = (data.items || [])[0];
+  return item ? { id: item.id, title: item.snippet.title } : null;
+}
+
 function fetchPlaylists() {
   const url = "https://www.googleapis.com/youtube/v3/playlists?part=snippet,contentDetails&mine=true";
   return fetchAllPages(url, (item) => ({
@@ -252,8 +259,27 @@ function renderItems(items) {
 }
 
 async function loadPlaylists() {
-  setStatus("プレイリストを読み込み中...");
+  setStatus("アカウントに紐づくチャンネルを確認中...");
   playlistSelect.innerHTML = '<option value="">プレイリストを選択...</option>';
+
+  let channel;
+  try {
+    channel = await fetchMyChannel();
+  } catch (err) {
+    setStatus(`チャンネル確認に失敗しました: ${err.message}`);
+    return;
+  }
+
+  if (!channel) {
+    setStatus(
+      "このGoogleアカウントに直接ひもづくYouTubeチャンネルが見つかりませんでした。" +
+      "複数のチャンネル(ブランドアカウント)を使い分けている場合、YouTube Musicで実際に使っている" +
+      "チャンネルと、ここでログインしたアカウントの既定チャンネルが異なっている可能性があります。"
+    );
+    return;
+  }
+
+  setStatus(`チャンネル「${channel.title}」を確認しました。プレイリストを読み込み中...`);
   try {
     const playlists = await fetchPlaylists();
     playlists.forEach((p) => {
