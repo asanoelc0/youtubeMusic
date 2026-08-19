@@ -1,6 +1,8 @@
 firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
 
+const REDIRECT_PENDING_KEY = "ytm_login_redirect_pending";
+
 let accessToken = null;
 
 const loginView = document.getElementById("loginView");
@@ -229,13 +231,19 @@ function buildGoogleProvider() {
   return provider;
 }
 
-loginBtn.addEventListener("click", () => {
+loginBtn.addEventListener("click", async () => {
   loginError.textContent = "";
-  // ポップアップ方式はモバイルブラウザ(ストレージ分離等)でアクセストークンの受け渡しに
-  // 失敗することがあるため、より安定するリダイレクト方式でログインする
-  auth.signInWithRedirect(buildGoogleProvider()).catch((err) => {
+  try {
+    // リダイレクトを跨いだ状態保持を確実にするため永続化方式を明示しておく
+    await auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
+    sessionStorage.setItem(REDIRECT_PENDING_KEY, "1");
+    // ポップアップ方式はモバイルブラウザ(ストレージ分離等)でアクセストークンの受け渡しに
+    // 失敗することがあるため、より安定するリダイレクト方式でログインする
+    await auth.signInWithRedirect(buildGoogleProvider());
+  } catch (err) {
+    sessionStorage.removeItem(REDIRECT_PENDING_KEY);
     loginError.textContent = `ログインに失敗しました: ${err.message}`;
-  });
+  }
 });
 
 logoutBtn.addEventListener("click", () => {
@@ -243,6 +251,9 @@ logoutBtn.addEventListener("click", () => {
 });
 
 async function handleRedirectResult() {
+  const wasPending = sessionStorage.getItem(REDIRECT_PENDING_KEY) === "1";
+  sessionStorage.removeItem(REDIRECT_PENDING_KEY);
+
   try {
     const result = await auth.getRedirectResult();
     if (result && result.user) {
@@ -260,6 +271,16 @@ async function handleRedirectResult() {
     showLoggedOut(`ログインに失敗しました: ${err.message}`);
     return;
   }
+
+  if (wasPending) {
+    // ログインボタンを押した直後のはずなのに結果が取得できなかった場合
+    showLoggedOut(
+      "ログイン結果を検出できませんでした。ブラウザのプライベートモードや「サイト間トラッキングを防ぐ」" +
+      "設定が原因の可能性があります。通常モードのSafari/Chromeでもう一度お試しください。"
+    );
+    return;
+  }
+
   // FirebaseのログインセッションはOAuthアクセストークン(YouTube API用)を保持しないため、
   // リダイレクト直後でなければ毎回「Googleでログイン」でトークンを取得し直す
   showLoggedOut();

@@ -1,4 +1,4 @@
-const CACHE_NAME = "ytm-reorder-v2";
+const CACHE_NAME = "ytm-reorder-v3";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -35,18 +35,16 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  // 開発中は常に最新版を優先し、オフライン時のみキャッシュにフォールバックする
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      const network = fetch(event.request)
-        .then((response) => {
-          if (response.ok) {
-            const clone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
-          }
-          return response;
-        })
-        .catch(() => cached);
-      return cached || network;
-    })
+    fetch(event.request)
+      .then((response) => {
+        if (response.ok) {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+        }
+        return response;
+      })
+      .catch(() => caches.match(event.request))
   );
 });
