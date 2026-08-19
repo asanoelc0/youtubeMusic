@@ -1,24 +1,16 @@
-firebase.initializeApp(firebaseConfig);
-const auth = firebase.auth();
-
 let accessToken = null;
 let tokenClient = null;
 
 const loginView = document.getElementById("loginView");
-const grantView = document.getElementById("grantView");
 const appView = document.getElementById("appView");
 const loginBtn = document.getElementById("loginBtn");
-const grantBtn = document.getElementById("grantBtn");
-const grantLogoutBtn = document.getElementById("grantLogoutBtn");
 const logoutBtn = document.getElementById("logoutBtn");
 const userLabel = document.getElementById("userLabel");
-const grantUserLabel = document.getElementById("grantUserLabel");
 const playlistSelect = document.getElementById("playlistSelect");
 const listEl = document.getElementById("list");
 const statusEl = document.getElementById("status");
 const saveBtn = document.getElementById("saveBtn");
 const loginError = document.getElementById("loginError");
-const grantError = document.getElementById("grantError");
 
 let sortable = null;
 let originalOrder = [];
@@ -27,52 +19,55 @@ function setStatus(text) {
   statusEl.textContent = text;
 }
 
-// 3つの画面: 未ログイン(loginView) / ログイン済みだがYouTube許可待ち(grantView) / 利用可能(appView)
-function renderAuthState() {
-  const user = auth.currentUser;
+function showLoggedOut(message) {
+  accessToken = null;
+  appView.hidden = true;
+  loginView.hidden = false;
+  loginError.textContent = message || "";
+}
 
-  if (!user) {
-    accessToken = null;
-    loginView.hidden = false;
-    grantView.hidden = true;
-    appView.hidden = true;
-    return;
-  }
-
-  if (!accessToken) {
-    loginView.hidden = true;
-    grantView.hidden = false;
-    appView.hidden = true;
-    grantUserLabel.textContent = user.displayName || user.email || "";
-    return;
-  }
-
+function showLoggedIn() {
   loginView.hidden = true;
-  grantView.hidden = true;
   appView.hidden = false;
-  userLabel.textContent = user.displayName || user.email || "";
 }
 
 function ensureTokenClient() {
   if (tokenClient || typeof google === "undefined") return tokenClient;
   tokenClient = google.accounts.oauth2.initTokenClient({
     client_id: GOOGLE_CLIENT_ID,
-    scope: "https://www.googleapis.com/auth/youtube",
-    callback: (tokenResponse) => {
+    scope: "https://www.googleapis.com/auth/youtube openid email profile",
+    callback: async (tokenResponse) => {
       if (tokenResponse.error) {
-        grantError.textContent = `アクセス許可に失敗しました: ${tokenResponse.error}`;
+        loginError.textContent = `ログインに失敗しました: ${tokenResponse.error}`;
         return;
       }
-      grantError.textContent = "";
+      loginError.textContent = "";
       accessToken = tokenResponse.access_token;
-      renderAuthState();
+      showLoggedIn();
+      userLabel.textContent = "読み込み中...";
+      fetchUserInfo().then((name) => {
+        userLabel.textContent = name || "";
+      });
       loadPlaylists();
     },
     error_callback: (err) => {
-      grantError.textContent = `アクセス許可に失敗しました: ${err.type || err.message || err}`;
+      loginError.textContent = `ログインに失敗しました: ${err.type || err.message || err}`;
     },
   });
   return tokenClient;
+}
+
+async function fetchUserInfo() {
+  try {
+    const res = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!res.ok) return "";
+    const data = await res.json();
+    return data.name || data.email || "";
+  } catch {
+    return "";
+  }
 }
 
 async function ytFetch(url, options = {}) {
@@ -85,8 +80,7 @@ async function ytFetch(url, options = {}) {
   });
 
   if (res.status === 401) {
-    accessToken = null;
-    renderAuthState();
+    showLoggedOut("認証の有効期限が切れました。もう一度ログインしてください。");
     throw new Error("access token expired");
   }
   if (!res.ok) {
@@ -264,40 +258,26 @@ saveBtn.addEventListener("click", async () => {
   }
 });
 
-// ステップ1: Firebaseでログイン(本人確認のみ、YouTubeのスコープは要求しない)
-loginBtn.addEventListener("click", async () => {
-  loginError.textContent = "";
-  try {
-    await auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
-    // onAuthStateChangedがrenderAuthState()を呼び、grantViewに遷移する
-  } catch (err) {
-    loginError.textContent = `ログインに失敗しました: ${err.message}`;
-  }
-});
-
-// ステップ2: Google Identity Servicesで、YouTube操作用のアクセストークンを取得する
+// 本人確認とYouTubeへのアクセス許可をGoogle Identity Servicesのポップアップ1回で行う
 // (ボタンクリックというユーザー操作の中で直接呼び出す必要がある)
-grantBtn.addEventListener("click", () => {
-  grantError.textContent = "";
+loginBtn.addEventListener("click", () => {
+  loginError.textContent = "";
   const client = ensureTokenClient();
   if (!client) {
-    grantError.textContent = "読み込みに失敗しました。ページを再読み込みしてください。";
+    loginError.textContent = "読み込みに失敗しました。ページを再読み込みしてください。";
     return;
   }
   client.requestAccessToken();
 });
 
-grantLogoutBtn.addEventListener("click", () => {
-  auth.signOut();
-});
-
 logoutBtn.addEventListener("click", () => {
-  auth.signOut();
+  if (accessToken && typeof google !== "undefined") {
+    google.accounts.oauth2.revoke(accessToken, () => {});
+  }
+  showLoggedOut();
 });
 
-auth.onAuthStateChanged(() => {
-  renderAuthState();
-});
+showLoggedOut();
 
 if (window.isSecureContext && "serviceWorker" in navigator) {
   window.addEventListener("load", () => {

@@ -1,9 +1,9 @@
-const CACHE_NAME = "ytm-reorder-v4";
+const CACHE_NAME = "ytm-reorder-v5";
 const APP_SHELL = [
   "./",
   "./index.html",
   "./app.js",
-  "./firebase-config.js",
+  "./config.js",
   "./manifest.json",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
@@ -30,7 +30,7 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
 
-  // 他オリジンへのリクエスト(YouTube API・Firebase・CDN等)はキャッシュ対象外にし、素通りさせる
+  // 他オリジンへのリクエスト(YouTube API・Google Identity Services・CDN等)はキャッシュ対象外にし、素通りさせる
   if (url.origin !== self.location.origin || event.request.method !== "GET") {
     return;
   }

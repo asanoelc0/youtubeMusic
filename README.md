@@ -15,7 +15,7 @@ YouTube Music で作成したプレイリストは YouTube 本体のプレイリ
 
 ### B. スマホでいつでも並び替える方法（Webアプリ、サーバー不要）
 
-`docs/` 以下は**サーバーを必要としない静的なWebアプリ**です。GitHub Pagesで公開し、Firebase Authentication
+`docs/` 以下は**サーバーを必要としない静的なWebアプリ**です。GitHub Pagesで公開し、Google Identity Services
 経由でGoogleにログインすると、ブラウザのJavaScriptから直接YouTube Data API v3を呼び出します。
 
 - 常時稼働させるサーバー（PCやクラウド）が不要
@@ -30,8 +30,7 @@ YouTube Music で作成したプレイリストは YouTube 本体のプレイリ
 - 曲順の更新には1曲あたり50ユニットのAPIクォータを消費します（デフォルト上限: 1日10,000ユニット ≒ 約200件の更新まで無料）。
 - Webアプリ版はブラウザで取得したGoogleのアクセストークンをその場で使う方式のため、トークンは
   **1時間程度で失効**します。失効したら「ログアウト」→「Googleでログイン」で再取得してください
-  （FirebaseのログインセッションはYouTube API用のアクセストークンを保持しないため、ページを開き直す
-  たびに毎回ログインし直す必要があります）。
+  （ページを開き直すたびに毎回ログインし直す必要があります）。
 
 ---
 
@@ -107,70 +106,34 @@ python import_playlist.py <playlist_id> playlist.xlsx
 
 ## B. スマホでいつでも並び替える方法（Webアプリ、サーバー不要）
 
-### 1. Firebaseプロジェクトを作成する
+このアプリのログインは **Google Identity Services**（Googleが公式に提供する、ブラウザのJavaScriptから
+直接使える認証ライブラリ）のみで行います。FirebaseのGoogleログインでアクセストークンを取り出す方式も
+試しましたが、モバイルブラウザ（Safari系のストレージ制限）で認証結果の受け渡しに失敗するケースが
+複数確認されたため、より安定するGoogle Identity Servicesに一本化しています。
 
-1. [Firebaseコンソール](https://console.firebase.google.com/) で「プロジェクトを追加」から新規作成
-   （裏側では対応するGoogle Cloudプロジェクトが自動作成されます）
-2. 左メニュー「Authentication」→「Sign-in method」→ **Google** を有効化
-3. 左メニュー「プロジェクトの設定」(⚙️アイコン) →「全般」タブの一番下「マイアプリ」→
-   「ウェブアプリを追加」(`</>`アイコン) → アプリ名は何でもよい
-4. 表示される `firebaseConfig` の値(`apiKey`, `authDomain`, `projectId` など)をコピーし、
-   このリポジトリの `docs/firebase-config.js` の該当箇所に貼り付ける
-   （これらの値は公開されることを前提としたものなので、コミットして問題ありません）
+### 1. Google Cloudプロジェクトの準備
 
-### 2. Google Cloud側の設定（YouTube APIを使えるようにする）
+1. [Google Cloud Console](https://console.cloud.google.com/) で新しいプロジェクトを作成
+2. 「APIとサービス」→「ライブラリ」から **YouTube Data API v3** を有効化
+3. 「APIとサービス」→「OAuth同意画面」
+   - User Type: 外部（個人利用なら「テスト」ステータスのままでOK）
+   - アプリ名・サポートメールなどの基本情報を入力
+   - 「スコープ」のステップで **「スコープを追加または削除」** をクリックし、検索欄に `youtube` と入力、
+     もしくは手動で `https://www.googleapis.com/auth/youtube` を貼り付けてチェックを入れ、更新する
+     - このスコープは「制限付きスコープ」として警告が出ますが、テストモードで自分のアカウントのみが
+       使う分には問題ありません（一般公開する場合のみGoogleの審査が必要になります）
+   - 「テストユーザー」のステップで、YouTube Musicを操作したい**自分のGoogleアカウント**を追加する
+     （ここに登録したアカウント以外はログインしてもYouTube APIの許可画面でエラーになります）
 
-Firebaseプロジェクトを作成すると、裏側で**同じIDのGoogle Cloudプロジェクトが自動的に作られています**
-（今回は `conaole-9f8a0`）。Firebase Authenticationでログイン自体はできても、そのままではYouTube Data API v3
-を呼び出す権限が無いため、こちらのGoogle Cloud側でもう2つ設定が必要です。
+### 2. OAuthクライアントIDを作成し`config.js`に設定する
 
-#### 2-1. YouTube Data API v3 を有効化する
-
-1. 以下のリンクを開く（`conaole-9f8a0`プロジェクトがあらかじめ選択された状態で開きます）
-   https://console.cloud.google.com/apis/library/youtube.googleapis.com?project=conaole-9f8a0
-2. 「有効にする」ボタンをクリック
-
-#### 2-2. OAuth同意画面を設定する
-
-1. 以下のリンクを開く
-   https://console.cloud.google.com/apis/credentials/consent?project=conaole-9f8a0
-2. まだ作成していなければ「User Type: 外部」を選び作成する（個人利用なら公開審査は不要で、
-   「テスト」ステータスのままで問題ありません）
-3. アプリ名・サポートメール・デベロッパー連絡先などの基本情報を入力
-4. 「スコープ」のステップで **「スコープを追加または削除」** をクリックし、検索欄に `youtube` と入力、
-   もしくは手動で `https://www.googleapis.com/auth/youtube` を貼り付けてチェックを入れ、更新する
-   - このスコープは「制限付きスコープ」として警告が出ますが、テストモードで自分のアカウントのみが
-     使う分には問題ありません（一般公開する場合のみGoogleの審査が必要になります）
-5. 「テストユーザー」のステップで、YouTube Musicを操作したい**自分のGoogleアカウント**を追加する
-   （ここに登録したアカウント以外はログインしてもYouTube APIの許可画面でエラーになります）
-
-#### 2-3. Web用クライアントIDを`firebase-config.js`に設定する
-
-このアプリはログインを2段階に分けています。
-
-1. **Firebase Authentication**: 「本人確認」だけを行う（モバイルブラウザでも安定して動作）
-2. **Google Identity Services**: YouTube操作用のアクセストークン取得だけを担当する
-   （Googleが同じ用途向けに提供している、ブラウザのJavaScriptから直接使えるライブラリ）
-
-Firebaseで「Google」のSign-in methodを有効にすると、裏側のGoogle Cloudプロジェクトに
-「ウェブクライアント」というOAuthクライアントIDが自動的に作られています。これをGoogle Identity
-Services側でも使います。
-
-1. 以下のリンクを開く
-   https://console.cloud.google.com/apis/credentials?project=conaole-9f8a0
-2. 「OAuth 2.0 クライアント ID」の一覧から、種類が **ウェブアプリケーション** のもの
-   （通常「Web client (auto created by Google Service)」という名前）をクリック
+1. 「APIとサービス」→「認証情報」→「認証情報を作成」→「OAuthクライアントID」
+2. アプリケーションの種類: **ウェブアプリケーション**
 3. 「承認済みの JavaScript 生成元」に、GitHub PagesのURL（例: `https://asanoelc0.github.io`。
-   末尾の `/youtubeMusic/` は不要、ドメイン部分だけ）を追加して保存
-4. ページ上部に表示されている**クライアントID**(`〜.apps.googleusercontent.com`の文字列)をコピーし、
-   `docs/firebase-config.js` の `GOOGLE_CLIENT_ID` に貼り付ける
-
-#### なぜ2段階に分けているのか
-
-FirebaseのGoogleログインでYouTube用のスコープも一緒に要求し、その場でアクセストークンを取り出す方法も
-試しましたが、モバイルブラウザ（Safari系のストレージ制限）でアクセストークンの受け渡しに失敗するケースが
-多く確認されました。ログイン(本人確認)はFirebaseに任せつつ、アクセストークンの取得だけはGoogleが同じ目的
-のために提供しているGoogle Identity Servicesに任せることで、より安定して動作します。
+   末尾の `/youtubeMusic/` などのパスは不要、ドメイン部分だけ）を追加
+4. 作成すると表示される**クライアントID**(`〜.apps.googleusercontent.com`の文字列)をコピーし、
+   このリポジトリの `docs/config.js` の `GOOGLE_CLIENT_ID` に貼り付ける
+   （この値は公開されることを前提としたものなので、コミットして問題ありません）
 
 ### 3. GitHub Pagesを有効化する
 
@@ -179,19 +142,14 @@ FirebaseのGoogleログインでYouTube用のスコープも一緒に要求し�
 3. Branch を `main`（マージ後）または現在の作業ブランチ、フォルダを **`/docs`** に設定して保存
 4. 数分後、`https://<GitHubユーザー名>.github.io/<リポジトリ名>/` でアクセスできるようになります
 
-### 4. 承認済みドメインを登録する
-
-1. Firebaseコンソール →「Authentication」→「Settings」タブ →「承認済みドメイン」
-2. 上記で発行された `<GitHubユーザー名>.github.io` を追加
-
-### 5. 使う
+### 4. 使う
 
 1. スマホ・PC問わず、上記のGitHub PagesのURLをブラウザで開く
-2. 「Googleでログイン」をタップし、自分のGoogleアカウントでログイン（本人確認のみ）
-3. 続けて「YouTubeへのアクセスを許可」をタップし、YouTubeの権限を許可する
-   （ここでポップアップが開きます。ブラウザにポップアップブロックの通知が出た場合は許可してください）
-4. プルダウンでプレイリストを選択すると曲一覧が表示される
-5. 各行の **☰** をドラッグして並び替え、下部の「この並び順を保存」でYouTube Musicに反映
+2. 「Googleでログイン」をタップし、自分のGoogleアカウントでログイン
+   （本人確認とYouTubeへのアクセス許可を1回のポップアップで行います。ブラウザにポップアップブロックの
+   通知が出た場合は許可してください）
+3. プルダウンでプレイリストを選択すると曲一覧が表示される
+4. 各行の **☰** をドラッグして並び替え、下部の「この並び順を保存」でYouTube Musicに反映
 
 ### PWAとして使う
 
