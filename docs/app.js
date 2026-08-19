@@ -267,7 +267,8 @@ loginBtn.addEventListener("click", () => {
     loginError.textContent = "読み込みに失敗しました。ページを再読み込みしてください。";
     return;
   }
-  client.requestAccessToken();
+  // 毎回アカウント選択画面を出し、意図しないGoogleアカウントでログインするのを防ぐ
+  client.requestAccessToken({ prompt: "select_account" });
 });
 
 logoutBtn.addEventListener("click", () => {
