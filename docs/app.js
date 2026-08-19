@@ -222,30 +222,50 @@ saveBtn.addEventListener("click", async () => {
   }
 });
 
-loginBtn.addEventListener("click", async () => {
-  loginError.textContent = "";
+function buildGoogleProvider() {
   const provider = new firebase.auth.GoogleAuthProvider();
   provider.addScope("https://www.googleapis.com/auth/youtube");
   provider.setCustomParameters({ prompt: "consent" });
+  return provider;
+}
 
-  try {
-    const result = await auth.signInWithPopup(provider);
-    const credential = firebase.auth.GoogleAuthProvider.credentialFromResult(result);
-    accessToken = credential.accessToken;
-    showLoggedIn(result.user);
-    loadPlaylists();
-  } catch (err) {
+loginBtn.addEventListener("click", () => {
+  loginError.textContent = "";
+  // ポップアップ方式はモバイルブラウザ(ストレージ分離等)でアクセストークンの受け渡しに
+  // 失敗することがあるため、より安定するリダイレクト方式でログインする
+  auth.signInWithRedirect(buildGoogleProvider()).catch((err) => {
     loginError.textContent = `ログインに失敗しました: ${err.message}`;
-  }
+  });
 });
 
 logoutBtn.addEventListener("click", () => {
   auth.signOut().finally(() => showLoggedOut());
 });
 
-// FirebaseのログインセッションはOAuthアクセストークン(YouTube API用)を保持しないため、
-// ページ読み込みのたびに毎回「Googleでログイン」でトークンを取得し直す
-showLoggedOut();
+async function handleRedirectResult() {
+  try {
+    const result = await auth.getRedirectResult();
+    if (result && result.user) {
+      const credential = firebase.auth.GoogleAuthProvider.credentialFromResult(result);
+      if (credential && credential.accessToken) {
+        accessToken = credential.accessToken;
+        showLoggedIn(result.user);
+        loadPlaylists();
+        return;
+      }
+      showLoggedOut("アクセストークンを取得できませんでした。もう一度ログインしてください。");
+      return;
+    }
+  } catch (err) {
+    showLoggedOut(`ログインに失敗しました: ${err.message}`);
+    return;
+  }
+  // FirebaseのログインセッションはOAuthアクセストークン(YouTube API用)を保持しないため、
+  // リダイレクト直後でなければ毎回「Googleでログイン」でトークンを取得し直す
+  showLoggedOut();
+}
+
+handleRedirectResult();
 
 if (window.isSecureContext && "serviceWorker" in navigator) {
   window.addEventListener("load", () => {
