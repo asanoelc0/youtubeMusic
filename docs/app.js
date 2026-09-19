@@ -1,9 +1,10 @@
-const APP_VERSION = "1.3.0";
+const APP_VERSION = "1.4.0";
 
 const STORAGE_KEYS = {
   token: "ytm_access_token",
   expiry: "ytm_token_expiry",
   userLabel: "ytm_user_label",
+  playlistId: "ytm_playlist_id",
 };
 
 let accessToken = null;
@@ -43,6 +44,7 @@ function clearSession() {
   localStorage.removeItem(STORAGE_KEYS.token);
   localStorage.removeItem(STORAGE_KEYS.expiry);
   localStorage.removeItem(STORAGE_KEYS.userLabel);
+  localStorage.removeItem(STORAGE_KEYS.playlistId);
 }
 
 // トークンには有効期限があり(通常1時間)、それを超えたら結局再ログインが必要になる。
@@ -374,25 +376,55 @@ async function loadPlaylists() {
       opt.textContent = `${p.title} (${p.count}曲)`;
       playlistSelect.appendChild(opt);
     });
-    setStatus(playlists.length ? "プレイリストを選んでください" : "プレイリストが見つかりませんでした");
+    if (!playlists.length) {
+      setStatus("プレイリストが見つかりませんでした");
+      return;
+    }
+
+    // 前回選んでいたプレイリストがまだ存在すれば、選び直さなくても済むよう復元する
+    const remembered = localStorage.getItem(STORAGE_KEYS.playlistId);
+    if (remembered && playlists.some((p) => p.id === remembered)) {
+      playlistSelect.value = remembered;
+      await loadPlaylistItems(remembered);
+      return;
+    }
+
+    setStatus("プレイリストを選んでください");
   } catch (err) {
     setStatus(`読み込みに失敗しました: ${err.message}`);
   }
 }
 
-playlistSelect.addEventListener("change", async () => {
-  const playlistId = playlistSelect.value;
-  if (!playlistId) return;
+// YouTube側から曲を取り直して描画する。
+// 取得に成功してから renderItems で描画するので、失敗しても表示中のリストは消えない
+// (先にリストを空にしてしまうと、読み込みに失敗したときに曲が消えたまま戻せなくなる)。
+async function loadPlaylistItems(playlistId, doneMessage) {
   setStatus("曲を読み込み中...");
-  listEl.innerHTML = "";
   try {
     const items = await fetchPlaylistItems(playlistId);
     originalOrder = items.map((i) => i.playlistItemId);
     renderItems(items);
-    setStatus(`${items.length}曲。ハンドル(☰)をドラッグして並び替えできます`);
+    setStatus(doneMessage || `${items.length}曲。ハンドル(☰)をドラッグして並び替えできます`);
+    return true;
   } catch (err) {
     setStatus(`読み込みに失敗しました: ${err.message}`);
+    return false;
   }
+}
+
+playlistSelect.addEventListener("change", () => {
+  const playlistId = playlistSelect.value;
+  // 保存中にページが再読み込みされても同じプレイリストに戻れるよう、選択を覚えておく
+  if (playlistId) localStorage.setItem(STORAGE_KEYS.playlistId, playlistId);
+  else localStorage.removeItem(STORAGE_KEYS.playlistId);
+  if (!playlistId) {
+    listEl.innerHTML = "";
+    originalOrder = [];
+    saveBtn.disabled = true;
+    setStatus("プレイリストを選んでください");
+    return;
+  }
+  loadPlaylistItems(playlistId);
 });
 
 saveBtn.addEventListener("click", async () => {
@@ -420,8 +452,13 @@ saveBtn.addEventListener("click", async () => {
     return;
   }
 
+  const savedMessage = result.total
+    ? `保存しました (${result.total}曲を移動)`
+    : "変更はありませんでした";
+
+  // 画面のDOMの並びをそのまま信用せず、YouTube側の実際の並びを取り直して表示する
   originalOrder = currentOrderIds();
-  setStatus(result.total ? `保存しました (${result.total}曲を移動)` : "変更はありませんでした");
+  await loadPlaylistItems(playlistId, savedMessage);
 });
 
 // 本人確認とYouTubeへのアクセス許可をGoogle Identity Servicesのポップアップ1回で行う
