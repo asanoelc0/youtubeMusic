@@ -1,4 +1,4 @@
-const APP_VERSION = "1.4.0";
+const APP_VERSION = "1.5.0";
 
 const STORAGE_KEYS = {
   token: "ytm_access_token",
@@ -20,9 +20,18 @@ const listEl = document.getElementById("list");
 const statusEl = document.getElementById("status");
 const saveBtn = document.getElementById("saveBtn");
 const loginError = document.getElementById("loginError");
+const exportItemsBtn = document.getElementById("exportItemsBtn");
+const exportPlaylistsBtn = document.getElementById("exportPlaylistsBtn");
+const exportPanel = document.getElementById("exportPanel");
+const exportHint = document.getElementById("exportHint");
+const exportText = document.getElementById("exportText");
 
 let sortable = null;
 let originalOrder = [];
+// 書き出し機能のために、読み込んだ内容をそのまま持っておく
+let allPlaylists = [];
+let currentPlaylist = null;
+let currentItems = [];
 
 document.title = `プレイリスト並び替え v${APP_VERSION}`;
 document.querySelectorAll(".app-version").forEach((el) => {
@@ -64,6 +73,13 @@ function loadStoredSession() {
 function showLoggedOut(message) {
   accessToken = null;
   clearSession();
+  allPlaylists = [];
+  currentPlaylist = null;
+  currentItems = [];
+  exportPanel.hidden = true;
+  exportText.value = "";
+  exportItemsBtn.disabled = true;
+  exportPlaylistsBtn.disabled = true;
   appView.hidden = true;
   loginView.hidden = false;
   loginError.textContent = message || "";
@@ -370,6 +386,8 @@ async function loadPlaylists() {
   setStatus(`チャンネル「${channel.title}」を確認しました。プレイリストを読み込み中...`);
   try {
     const playlists = await fetchPlaylists();
+    allPlaylists = playlists;
+    exportPlaylistsBtn.disabled = !playlists.length;
     playlists.forEach((p) => {
       const opt = document.createElement("option");
       opt.value = p.id;
@@ -403,6 +421,9 @@ async function loadPlaylistItems(playlistId, doneMessage) {
   try {
     const items = await fetchPlaylistItems(playlistId);
     originalOrder = items.map((i) => i.playlistItemId);
+    currentPlaylist = allPlaylists.find((p) => p.id === playlistId) || { id: playlistId, title: "" };
+    currentItems = items;
+    exportItemsBtn.disabled = false;
     renderItems(items);
     setStatus(doneMessage || `${items.length}曲。ハンドル(☰)をドラッグして並び替えできます`);
     return true;
@@ -420,11 +441,69 @@ playlistSelect.addEventListener("change", () => {
   if (!playlistId) {
     listEl.innerHTML = "";
     originalOrder = [];
+    currentPlaylist = null;
+    currentItems = [];
+    exportItemsBtn.disabled = true;
     saveBtn.disabled = true;
     setStatus("プレイリストを選んでください");
     return;
   }
   loadPlaylistItems(playlistId);
+});
+
+// 書き出したJSONを画面に出しつつ、クリップボードにもコピーする。
+// iOSではユーザー操作と同じ処理の中で同期的に writeText を呼ばないとコピーが拒否されるため、
+// 通信は行わず、読み込み済みの内容だけから組み立てている。
+// コピーが失敗しても手で選択できるよう、テキストは必ず画面に表示する。
+function exportJson(label, data) {
+  const json = JSON.stringify(data, null, 2);
+  exportPanel.hidden = false;
+  exportText.value = json;
+  exportHint.textContent = `${label}を書き出しました。コピーできない場合はこの枠内を長押しして選択してください。`;
+
+  if (!navigator.clipboard || !navigator.clipboard.writeText) {
+    return;
+  }
+  navigator.clipboard.writeText(json).then(
+    () => {
+      exportHint.textContent = `${label}をクリップボードにコピーしました。`;
+    },
+    () => {
+      exportHint.textContent = `${label}を書き出しました。自動コピーできなかったので、この枠内を長押しして選択してください。`;
+    }
+  );
+}
+
+// 画面に並んでいる順(= 直前に読み込んだYouTube側の順)でそのまま書き出す
+exportItemsBtn.addEventListener("click", () => {
+  if (!currentPlaylist) return;
+  const itemById = new Map(currentItems.map((item) => [item.playlistItemId, item]));
+  const items = currentOrderIds().map((playlistItemId, index) => {
+    const item = itemById.get(playlistItemId);
+    return {
+      position: index,
+      title: item.title,
+      channel: item.channel,
+      videoId: item.videoId,
+      playlistItemId: item.playlistItemId,
+    };
+  });
+
+  exportJson("曲リスト", {
+    exportedAt: new Date().toISOString(),
+    playlist: { id: currentPlaylist.id, title: currentPlaylist.title },
+    itemCount: items.length,
+    items,
+  });
+});
+
+exportPlaylistsBtn.addEventListener("click", () => {
+  if (!allPlaylists.length) return;
+  exportJson("プレイリスト一覧", {
+    exportedAt: new Date().toISOString(),
+    playlistCount: allPlaylists.length,
+    playlists: allPlaylists.map((p) => ({ id: p.id, title: p.title, itemCount: p.count })),
+  });
 });
 
 saveBtn.addEventListener("click", async () => {

@@ -186,6 +186,43 @@
     color: #fff;
   }
   #saveBtn:disabled { opacity: 0.5; }
+  #exportBar {
+    display: flex;
+    gap: 8px;
+    padding: 0 16px 10px;
+  }
+  #exportBar button {
+    flex: 1;
+    background: transparent;
+    color: var(--muted);
+    border: 1px solid var(--border);
+    padding: 8px 10px;
+    font-size: 13px;
+    border-radius: 8px;
+  }
+  #exportBar button:disabled { opacity: 0.5; }
+  #exportPanel {
+    padding: 0 16px 12px;
+  }
+  #exportHint {
+    font-size: 12px;
+    color: var(--muted);
+    margin: 0 0 6px;
+  }
+  #exportText {
+    width: 100%;
+    height: 160px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px;
+    line-height: 1.4;
+    color: var(--text);
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px;
+    -webkit-user-select: text;
+    user-select: text;
+  }
   .empty {
     text-align: center;
     color: var(--muted);
@@ -226,6 +263,17 @@
   </header>
 
   <div id="status"></div>
+
+  <div id="exportBar">
+    <button id="exportItemsBtn" disabled>このプレイリストをコピー</button>
+    <button id="exportPlaylistsBtn" disabled>一覧をコピー</button>
+  </div>
+
+  <div id="exportPanel" hidden>
+    <p id="exportHint"></p>
+    <textarea id="exportText" readonly></textarea>
+  </div>
+
   <div id="list"></div>
 
   <footer>
