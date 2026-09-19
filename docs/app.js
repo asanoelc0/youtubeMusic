@@ -1,4 +1,4 @@
-const APP_VERSION = "1.2.0";
+const APP_VERSION = "1.3.0";
 
 const STORAGE_KEYS = {
   token: "ytm_access_token",
@@ -183,15 +183,98 @@ function fetchPlaylistItems(playlistId) {
   });
 }
 
+// 並び替えでは「動かす必要がある曲」だけをAPIで更新する。
+// playlistItems.update は1曲あたり50ユニットのクォータを消費するため、毎回すべての曲を
+// 書き直すと100曲のプレイリストで5,000ユニット(1日の上限10,000の半分)を使い切ってしまう。
+// 元の並びの中で「順序が崩れていない最長の並び」(最長増加部分列)をそのまま残し、
+// そこから外れた曲だけを動かせば、更新回数が理論上の最小になる。
+function longestKeptIds(originalIds, targetIds) {
+  const originalIndex = new Map(originalIds.map((id, index) => [id, index]));
+  const seq = targetIds.map((id) => originalIndex.get(id));
+  // tails[k] は「長さk+1の増加部分列」の末尾になり得る、いちばん小さい要素のseq内の位置
+  const tails = [];
+  const prev = new Array(seq.length).fill(-1);
+
+  for (let i = 0; i < seq.length; i++) {
+    let lo = 0;
+    let hi = tails.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (seq[tails[mid]] < seq[i]) lo = mid + 1;
+      else hi = mid;
+    }
+    if (lo > 0) prev[i] = tails[lo - 1];
+    tails[lo] = i;
+  }
+
+  const kept = new Set();
+  let cursor = tails.length ? tails[tails.length - 1] : -1;
+  while (cursor >= 0) {
+    kept.add(targetIds[cursor]);
+    cursor = prev[cursor];
+  }
+  return kept;
+}
+
+// 動かす曲と、その移動先の位置を求める。
+// position は「その移動を行う時点でのプレイリストの状態」に対する位置なので、
+// 返ってきた順番どおりに適用しなければ正しい並びにならない。
+//
+// 動かす曲は目的の並びの先頭から順に確定させていく。まだ動かしていない曲は
+// 後でどのみち抜き差しされるので、確定済みの曲との前後関係さえ合っていればよい。
+// そのため挿入位置は「自分より後ろに来るはずの、確定済みの曲」の直前とする。
+//
+// 曲が増減しているなど計画を立てられない場合は null を返し、呼び出し側で全曲更新に切り替える。
+function planMoves(originalIds, targetIds) {
+  if (originalIds.length !== targetIds.length) return null;
+
+  const targetIndex = new Map(targetIds.map((id, index) => [id, index]));
+  if (targetIndex.size !== targetIds.length) return null;
+  if (originalIds.some((id) => !targetIndex.has(id))) return null;
+
+  const settled = longestKeptIds(originalIds, targetIds);
+  const current = [...originalIds];
+  const moves = [];
+
+  for (let t = 0; t < targetIds.length; t++) {
+    const playlistItemId = targetIds[t];
+    if (settled.has(playlistItemId)) continue;
+
+    const from = current.indexOf(playlistItemId);
+    current.splice(from, 1);
+
+    let position = current.length;
+    for (let i = 0; i < current.length; i++) {
+      if (settled.has(current[i]) && targetIndex.get(current[i]) > t) {
+        position = i;
+        break;
+      }
+    }
+
+    current.splice(position, 0, playlistItemId);
+    settled.add(playlistItemId);
+    if (from !== position) moves.push({ playlistItemId, position });
+  }
+
+  // 計画どおりに動かした結果が目的の並びと一致しない場合は、プレイリストを壊さないよう計画を捨てる
+  if (current.join("\n") !== targetIds.join("\n")) return null;
+  return moves;
+}
+
 async function saveOrder(playlistId, items) {
-  const results = [];
-  for (let position = 0; position < items.length; position++) {
-    const item = items[position];
+  const targetIds = items.map((item) => item.playlistItemId);
+  const itemById = new Map(items.map((item) => [item.playlistItemId, item]));
+  const moves = planMoves(originalOrder, targetIds);
+  const plan = moves || targetIds.map((playlistItemId, position) => ({ playlistItemId, position }));
+  let done = 0;
+
+  for (const move of plan) {
+    const item = itemById.get(move.playlistItemId);
     const body = {
       id: item.playlistItemId,
       snippet: {
         playlistId,
-        position,
+        position: move.position,
         resourceId: { kind: "youtube#video", videoId: item.videoId },
       },
     };
@@ -201,12 +284,15 @@ async function saveOrder(playlistId, items) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      results.push({ playlistItemId: item.playlistItemId, ok: true });
+      done++;
+      setStatus(`保存中... (${done}/${plan.length}曲)`);
     } catch (err) {
-      results.push({ playlistItemId: item.playlistItemId, ok: false, error: String(err) });
+      // 1曲でも失敗すると、以降の移動先の位置がすべてずれてしまうためその場で中断する
+      return { total: plan.length, done, error: err };
     }
   }
-  return results;
+
+  return { total: plan.length, done, error: null };
 }
 
 function escapeHtml(str) {
@@ -319,18 +405,23 @@ saveBtn.addEventListener("click", async () => {
   }));
 
   saveBtn.disabled = true;
-  setStatus("保存中... (曲数が多いと時間がかかります)");
+  setStatus("保存中...");
 
-  const results = await saveOrder(playlistId, items);
-  const failed = results.filter((r) => !r.ok);
+  const result = await saveOrder(playlistId, items);
 
-  if (failed.length) {
-    setStatus(`${failed.length}件の更新に失敗しました。もう一度試してください。`);
+  if (result.error) {
+    // 中断した時点でYouTube側の並びは画面の表示とずれているため、読み込み直してもらう
+    setStatus(
+      `${result.done}/${result.total}曲まで反映したところで失敗しました。` +
+      `プレイリストを選び直して現在の並びを読み込んでから、もう一度お試しください。` +
+      `(${result.error.message})`
+    );
     saveBtn.disabled = false;
-  } else {
-    originalOrder = currentOrderIds();
-    setStatus("保存しました");
+    return;
   }
+
+  originalOrder = currentOrderIds();
+  setStatus(result.total ? `保存しました (${result.total}曲を移動)` : "変更はありませんでした");
 });
 
 // 本人確認とYouTubeへのアクセス許可をGoogle Identity Servicesのポップアップ1回で行う
